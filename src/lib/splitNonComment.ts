@@ -1,4 +1,6 @@
-import { join, dirname } from '@std/path'
+import { join, dirname, extname } from '@std/path'
+
+const IGNORED_EXTENSIONS = new Set(['.md', '.txt', '.json'])
 
 export function isCommentOrWhitespace(line: string): boolean {
   return /^\s*(?:\/\/|#)/.test(line) || /^\s*$/.test(line)
@@ -189,6 +191,7 @@ export async function processTreesKeepingNonComments(left: string, right: string
 
   for (const rel of relPaths) {
     if (rel === 'JJ-INSTRUCTIONS') continue
+    if (IGNORED_EXTENSIONS.has(extname(rel))) continue
     const leftPath = join(left, rel)
     const rightPath = join(right, rel)
     const leftTxt = await readFileIfExists(leftPath)

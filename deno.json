@@ -1,7 +1,7 @@
 {
   "name": "@farnoy/jj-comment-splitter",
   "exports": "./src/cli/jj-merge-tool.ts",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "imports": {
     "@std/path": "jsr:@std/path@^1.0.8",
     "@std/assert": "jsr:@std/assert@1",
