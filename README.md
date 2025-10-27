@@ -15,7 +15,7 @@ edit-args = [
   "--allow-read=/tmp",
   "--allow-write=/tmp",
   "--allow-env=JJ_SPLIT_LOG",
-  "https://raw.githubusercontent.com/farnoy/code-comment-splitter/main/src/cli/jj-merge-tool.ts",
+  "@farnoy/jj-comment-splitter",
   "$left",
   "$right"
 ]
