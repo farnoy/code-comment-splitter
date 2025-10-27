@@ -4,8 +4,61 @@ export function isCommentOrWhitespace(line: string): boolean {
   return /^\s*(?:\/\/|#)/.test(line) || /^\s*$/.test(line)
 }
 
+function stripInlineComment(line: string): string {
+  let commentStart = -1
+  let inString = false
+  let stringChar = ''
+
+  // Find // or # that's either at start or preceded by whitespace, but not inside strings
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i]
+
+    // Track string boundaries
+    if ((char === '"' || char === "'" || char === '`') && (i === 0 || line[i - 1] !== '\\')) {
+      if (!inString) {
+        inString = true
+        stringChar = char
+      } else if (char === stringChar) {
+        inString = false
+        stringChar = ''
+      }
+    }
+
+    // Skip comment detection inside strings
+    if (inString) continue
+
+    if (char === '/' && i + 1 < line.length && line[i + 1] === '/') {
+      // Check if at start or preceded by whitespace
+      if (i === 0 || /\s/.test(line[i - 1])) {
+        commentStart = i
+        break
+      }
+    } else if (char === '#') {
+      // Check if at start or preceded by whitespace
+      if (i === 0 || /\s/.test(line[i - 1])) {
+        commentStart = i
+        break
+      }
+    }
+  }
+
+  if (commentStart === -1) {
+    return line
+  }
+
+  return line.substring(0, commentStart).trimEnd()
+}
+
 function equalIgnoringTrailingWhitespace(a: string, b: string): boolean {
-  return a.trimEnd() === b.trimEnd()
+  const aStripped = stripInlineComment(a).trimEnd()
+  const bStripped = stripInlineComment(b).trimEnd()
+
+  // If both lines have no code (only comments/whitespace), treat as different
+  if (aStripped === '' && bStripped === '') {
+    return a.trimEnd() === b.trimEnd()
+  }
+
+  return aStripped === bStripped
 }
 
 function normalize(text: string): { lines: string[]; eol: string } {
@@ -42,48 +95,68 @@ function lcs(a: string[], b: string[], eq: (x: string, y: string) => boolean): A
 }
 
 export function mergeFileKeepingNonComments(leftText: string | null, rightText: string): string {
-  const leftNorm = leftText !== null ? normalize(leftText) : { lines: [] as string[], eol: rightText.endsWith('\n') ? '\n' : '' }
+  const leftNorm = (leftText !== null && leftText !== '') ? normalize(leftText) : { lines: [] as string[], eol: rightText.endsWith('\n') ? '\n' : '' }
   const rightNorm = normalize(rightText)
   const ops = lcs(leftNorm.lines, rightNorm.lines, equalIgnoringTrailingWhitespace)
 
   const out: string[] = []
   let i = 0, j = 0
-  let k = 0
-  while (k < ops.length) {
-    const op = ops[k]
-    if (op === 'eq') {
-      out.push(leftNorm.lines[i]); i++; j++; k++
+
+  for (let k = 0; k < ops.length; ) {
+    if (ops[k] === 'eq') {
+      const leftLine = leftNorm.lines[i]
+      const rightLine = rightNorm.lines[j]
+
+      // If lines are identical, keep as-is (preserves existing comments)
+      if (leftLine.trimEnd() === rightLine.trimEnd()) {
+        out.push(leftLine)
+      } else {
+        // Lines are equal ignoring comments, so strip the newly added comment
+        const stripped = stripInlineComment(leftLine)
+        out.push(stripped)
+      }
+      i++; j++; k++
       continue
     }
 
-    if (op === 'del' || op === 'ins') {
-      const dels: string[] = []
-      const ins: string[] = []
-      let k2 = k
-      while (k2 < ops.length && ops[k2] === 'del') {
-        dels.push(leftNorm.lines[i]); i++; k2++
+    // Collect a hunk of non-eq operations
+    const dels: string[] = []
+    const ins: string[] = []
+
+    while (k < ops.length && ops[k] !== 'eq') {
+      if (ops[k] === 'del') {
+        dels.push(leftNorm.lines[i])
+        i++
+      } else {
+        ins.push(rightNorm.lines[j])
+        j++
       }
-      while (k2 < ops.length && ops[k2] === 'ins') {
-        ins.push(rightNorm.lines[j]); j++; k2++
+      k++
+    }
+
+    // Process insertions: preserve blank lines, skip comments, strip inline comments from code
+    for (const line of ins) {
+      // Preserve blank lines for code structure
+      if (/^\s*$/.test(line)) {
+        out.push('')
+        continue
       }
 
-      const insHasNonComment = ins.some((line) => !isCommentOrWhitespace(line))
-      if (!insHasNonComment) {
-        for (const l of dels) out.push(l)
-      } else {
-        for (const l of dels) {
-          if (isCommentOrWhitespace(l)) out.push(l)
-        }
-        for (const r of ins) {
-          if (!isCommentOrWhitespace(r)) out.push(r)
-        }
+      // Skip full-line comments
+      if (isCommentOrWhitespace(line)) {
+        continue
       }
-      k = k2
-      continue
+
+      // Keep code lines, stripping any inline comments
+      const stripped = stripInlineComment(line)
+      out.push(stripped)
     }
   }
 
-  return out.join('\n') + (leftText !== null ? (leftText.endsWith('\n') ? '\n' : '') : rightNorm.eol)
+  if (out.length === 0) {
+    return ''
+  }
+  return out.join('\n') + ((leftText !== null && leftText !== '') ? (leftText.endsWith('\n') ? '\n' : '') : rightNorm.eol)
 }
 
 async function ensureDir(path: string): Promise<void> {
@@ -130,7 +203,18 @@ export async function processTreesKeepingNonComments(left: string, right: string
 
     if (leftTxt === null && rightTxt !== null) {
       const { lines, eol } = normalize(rightTxt)
-      const filtered = lines.filter((l) => !isCommentOrWhitespace(l)).join('\n') + eol
+      // For new files: preserve blank lines, remove comments, strip inline comments
+      const filtered = lines
+        .map((l) => {
+          // Preserve blank lines
+          if (/^\s*$/.test(l)) return ''
+          // Skip full-line comments
+          if (isCommentOrWhitespace(l)) return null
+          // Strip inline comments from code lines
+          return stripInlineComment(l)
+        })
+        .filter((l) => l !== null)
+        .join('\n') + eol
       await ensureDir(dirname(rightPath))
       await Deno.writeTextFile(rightPath, filtered)
       if (log) console.error(`[filter-right-only] ${rel}`)

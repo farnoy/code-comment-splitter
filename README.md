@@ -1,6 +1,6 @@
 # code-comment-splitter
 
-A merge tool for Jujutsu (jj) that splits comment-only changes from code changes. When you run `jj split`, this tool filters out changes that are purely comments or whitespace, keeping only real code modifications.
+Split comments into separate commits. When you add code and comments together, use this with `jj split` to commit the code changes first while leaving comment-only changes in your working copy. This lets you stage, squash, and manipulate documentation separately from logic changes.
 
 ## Quick Start
 
@@ -29,10 +29,7 @@ jj split --tool split-comments
 
 ### What it does
 
-When you have mixed changes (code + comments), running `jj split --tool split-comments` will:
-- Create one commit with only the non-comment changes
-- Leave comment-only changes in your working copy
-- Restore any deleted comments (so you don't accidentally remove documentation)
+Running `jj split --tool split-comments` creates one commit with non-comment changes and leaves comment-only changes in your working copy.
 
 Supports `//` and `#` style comments.
 
