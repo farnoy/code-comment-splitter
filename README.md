@@ -4,7 +4,7 @@ A merge tool for Jujutsu (jj) that splits comment-only changes from code changes
 
 ## Quick Start
 
-No installation needed! Run directly from GitHub with Deno:
+No installation needed! Run directly from JSR with Deno:
 
 ```toml
 # Add to your jj config (~/.config/jj/config.toml)
@@ -15,7 +15,7 @@ edit-args = [
   "--allow-read=/tmp",
   "--allow-write=/tmp",
   "--allow-env=JJ_SPLIT_LOG",
-  "@farnoy/jj-comment-splitter",
+  "jsr:@farnoy/jj-comment-splitter",
   "$left",
   "$right"
 ]
